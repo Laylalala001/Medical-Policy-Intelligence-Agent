@@ -318,6 +318,12 @@ python nmpa_weekly_report.py
 python backfill_nmpa_recent.py
 ```
 
+## 📸 数据库示例
+
+下面是系统数据库中真实存储的公告数据截图，包含标题、分类、AI摘要和发布日期：
+
+![数据库公告示例](/docs/image.png)
+
 ---
 
 # 📈 项目价值
