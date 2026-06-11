@@ -1,6 +1,6 @@
-# 📡 AI-Driven Pharmaceutical Policy Intelligence System
+# 🏥 Medical Regulatory Intelligence Platform (MRIP)
 
-> 基于 Python + PostgreSQL + Ollama + 飞书构建的医药政策情报自动化系统
+> 面向医药、医疗器械及医疗AI行业的监管情报自动化平台
 
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Python](https://img.shields.io/badge/Python-3.14-blue)
@@ -9,364 +9,316 @@
 
 ---
 
-# 📖 项目背景
+# 📖 Project Overview
 
-在医药、医疗器械及医疗AI行业中，政策变化会直接影响：
+Medical Regulatory Intelligence Platform（MRIP）是一套面向医药企业、医疗器械企业及医疗AI企业的监管情报自动化系统。
 
-* 药品注册审批
-* 医疗器械上市
-* 医保准入
-* 企业研发方向
-* 行业投资决策
+系统每日自动监测国家药品监督管理局（NMPA）重要监管信息，通过自动采集、AI分类、AI摘要及飞书推送能力，帮助企业第一时间获取监管动态，提升法规响应效率。
 
-然而行业从业者通常需要每天手动访问国家药监局（NMPA）官网查看公告，效率较低。
+当前版本已实现：
 
-因此开发本项目，实现：
-
-> 自动抓取 → 自动分类 → AI摘要 → 飞书推送 → 周报汇总
-
-帮助从业人员第一时间获取关键政策动态。
+* NMPA法规文件自动监测
+* NMPA药监动态自动监测
+* AI自动分类
+* AI智能摘要
+* PostgreSQL数据存储
+* 飞书实时推送
+* 周报自动生成
 
 ---
 
-# 🎯 项目目标
+# 💼 Business Value
 
-实现一个无人值守的政策情报系统：
+对于医药企业而言，监管信息直接影响：
 
-```text
-NMPA官网
-    ↓
-自动采集
-    ↓
-PostgreSQL存储
-    ↓
-AI分类
-    ↓
-AI摘要
-    ↓
-飞书推送
-    ↓
-周报生成
-```
+* 药品研发
+* 医疗器械注册
+* 临床试验开展
+* 产品上市审批
+* 市场准入策略
+* 企业合规管理
 
-每日自动运行。
+传统模式下，法规专员、注册事务（RA）及行业研究人员需要每天人工访问多个监管网站进行检索。
 
-无需人工干预。
+本项目通过自动化采集与AI处理能力，实现：
+
+* 自动发现监管动态
+* 自动提取核心信息
+* 降低人工检索成本
+* 提高法规响应效率
+* 支持研发与注册决策
+* 支持行业研究与竞争分析
+
+适用场景：
+
+* 药品注册事务（RA）
+* 医疗器械法规事务
+* QA/QC质量管理
+* 医疗AI企业运营
+* 医药咨询机构
+* 投资研究机构
 
 ---
 
-# 🚀 核心功能
+# 🎯 Project Goal
 
-## 1. 自动采集
+构建面向医药行业的监管情报自动化平台。
 
-自动访问国家药监局官网：
+实现：
 
-* 法规公告
-* 注册审批公告
-* 医疗器械公告
-* 化妆品公告
+NMPA → 自动采集 → 数据存储 → AI分析 → 飞书推送 → 周报生成
+
+最终形成无人值守的监管情报体系。
+
+---
+
+# 🚀 Core Features
+
+## 1. Automated Monitoring
+
+自动访问国家药监局（NMPA）官网：
+
+* 法规文件
+* 药监动态
 
 支持：
 
-* 翻页抓取
-* 新增公告检测
+* 自动翻页
+* 增量采集
 * 去重处理
+* 定时运行
 
 ---
 
-## 2. 智能分类
+## 2. AI Classification
 
-根据标题和正文内容自动分类：
+自动分类：
 
-| 分类   | 示例        |
-| ---- | --------- |
-| 药品   | 药品审批、药品注册 |
-| 医疗器械 | 医疗器械注册、备案 |
-| 化妆品  | 化妆品监管公告   |
+| 分类   | 示例          |
+| ---- | ----------- |
+| 药品   | 药品审批、药品监管   |
+| 医疗器械 | 医疗器械注册、标准发布 |
+| 化妆品  | 化妆品监管动态     |
+| 其他   | 综合监管信息      |
 
 分类准确率：
 
-> 95%+
+95%+
 
 ---
 
-## 3. AI摘要
+## 3. AI Summarization
 
-调用本地大模型：
+基于本地大模型：
 
-```text
-Ollama
-+
-Qwen2-7B
-```
+Ollama + Qwen2-7B
 
 自动生成：
 
-* 公告核心内容
-* 政策变化要点
+* 政策核心内容
+* 监管变化要点
 * 企业影响分析
 
 示例：
 
 原文：
 
-```text
-关于批准XX药品上市申请的公告
-```
+关于发布药物临床试验质量管理规范的公告
 
 AI摘要：
 
-```text
-NMPA批准XX药品上市，预计将进一步丰富相关治疗领域用药选择。
-```
+新版GCP规范将于2026年9月实施，进一步优化药物临床试验质量管理体系，支持生物医药创新研发。
 
 ---
 
-## 4. 飞书推送
+## 4. Feishu Notification
 
-自动发送至飞书群：
+自动推送：
 
 * 标题
 * 分类
 * AI摘要
 * 原文链接
 
-支持点击跳转原公告。
+支持日报与周报推送。
 
 ---
 
-## 5. 周报生成
+## 5. Weekly Intelligence Report
 
-每周自动汇总：
+自动汇总：
 
-* 药品类公告
-* 医疗器械类公告
-* 化妆品类公告
+* 药品监管动态
+* 医疗器械监管动态
+* 化妆品监管动态
 
 生成：
 
-```text
-本周政策动态周报
-```
-
-自动推送飞书。
+NMPA Weekly Intelligence Report
 
 ---
 
-# 🏗️ 系统架构
+# 📡 Data Sources
+
+当前已接入：
+
+| 数据源       | 状态 |
+| --------- | -- |
+| NMPA 法规文件 | ✅  |
+| NMPA 药监动态 | ✅  |
+
+规划接入：
+
+| 数据源         | 状态 |
+| ----------- | -- |
+| CDE 审评动态    | 🚧 |
+| CMDE 医疗器械审评 | 🚧 |
+| 飞行检查公告      | 🚧 |
+| 药品不良反应监测    | 🚧 |
+| 医疗AI专题资讯    | 🚧 |
+| 国家医保局政策     | 🚧 |
+
+---
+
+# 🏗 System Architecture
 
 ```text
-               ┌───────────────┐
-               │ NMPA 官网     │
-               └──────┬────────┘
-                      │
-                      ▼
-            ┌──────────────────┐
-            │ Python 爬虫      │
-            │ DrissionPage     │
-            └──────┬───────────┘
+                 NMPA
+                   │
+        ┌──────────┴──────────┐
+        │                     │
+   法规文件              药监动态
+        │                     │
+        └──────────┬──────────┘
                    │
                    ▼
-          ┌───────────────────┐
-          │ PostgreSQL        │
-          │ 数据存储          │
-          └──────┬────────────┘
-                 │
-                 ▼
-          ┌───────────────────┐
-          │ Ollama            │
-          │ Qwen2-7B          │
-          └──────┬────────────┘
-                 │
-                 ▼
-          ┌───────────────────┐
-          │ AI分类 & AI摘要   │
-          └──────┬────────────┘
-                 │
-                 ▼
-          ┌───────────────────┐
-          │ 飞书机器人        │
-          └───────────────────┘
+         Python Data Collector
+      (DrissionPage + BS4)
+                   │
+                   ▼
+            PostgreSQL
+             Database
+                   │
+                   ▼
+          AI Classification
+            + Summarization
+          (Ollama + Qwen2)
+                   │
+                   ▼
+            Feishu Bot
+                   │
+                   ▼
+        Daily Report / Weekly Report
 ```
 
 ---
 
-# 🛠️ 技术栈
+# 📊 Project Results
 
-| 模块     | 技术                     |
-| ------ | ---------------------- |
-| 编程语言   | Python 3.14            |
-| 爬虫框架   | DrissionPage           |
-| HTML解析 | BeautifulSoup          |
-| 数据库    | PostgreSQL             |
-| 数据部署   | Docker                 |
-| AI模型   | Ollama + Qwen2-7B      |
-| 自动调度   | Windows Task Scheduler |
-| 消息推送   | 飞书机器人                  |
-| 版本控制   | Git                    |
+当前已实现：
 
----
+✅ NMPA法规文件自动监测
 
-# 📂 项目结构
+✅ NMPA药监动态自动监测
 
-```text
-project/
-│
-├── nmpa_crawler.py
-├── nmpa_weekly_report.py
-├── backfill_nmpa_recent.py
-│
-├── README.md
-├── requirements.txt
-└── .gitignore
-```
+✅ PostgreSQL数据存储
+
+✅ AI自动分类
+
+✅ AI自动摘要
+
+✅ 飞书机器人推送
+
+✅ 自动生成周报
+
+技术栈：
+
+Python · PostgreSQL · Docker · Ollama · Qwen2-7B · DrissionPage · BeautifulSoup
 
 ---
 
-# 📦 安装依赖
+# 📸 Demo
 
-```bash
-pip install psycopg2-binary requests beautifulsoup4 DrissionPage python-dotenv
-```
-
----
-
-# 🐳 启动 PostgreSQL
-
-```bash
-docker run -d \
---name postgres_hotspot \
--e POSTGRES_PASSWORD=YOUR_PASSWORD \
--e POSTGRES_USER=analyst \
--e POSTGRES_DB=hotspot \
--v postgres_data:/var/lib/postgresql/data \
--p 5432:5432 \
-postgres:16
-```
-
----
-
-# 🤖 安装 Ollama
-
-安装完成后执行：
-
-```bash
-ollama pull qwen2:7b
-```
-
-启动模型：
-
-```bash
-ollama run qwen2:7b
-```
-
----
-
-# ⚙️ 配置数据库
-
-```python
-DB_NAME = "hotspot"
-DB_USER = "analyst"
-DB_PASSWORD = "YOUR_PASSWORD"
-DB_HOST = "localhost"
-DB_PORT = 5432
-```
-
----
-
-# ⚙️ 配置飞书机器人
-
-```python
-FEISHU_WEBHOOK = "https://open.feishu.cn/open-apis/bot/v2/hook/xxxx"
-```
-
-获取方式：
-
-飞书群
-
-→ 群设置
-
-→ 群机器人
-
-→ 添加自定义机器人
-
-→ 复制 Webhook
-
----
-
-# 🚀 运行项目
-
-## 每日采集
-
-```bash
-python nmpa_crawler.py
-```
-
----
-
-## 周报生成
-
-```bash
-python nmpa_weekly_report.py
-```
-
----
-
-## 历史数据补摘要
-
-```bash
-python backfill_nmpa_recent.py
-```
-
-## 📸 示例
-
-下面是系统数据库中真实存储的公告数据截图，包含标题、分类、AI摘要和发布日期：飞书推送截图
+数据库存储示例：
 
 ![数据库公告示例](/docs/image.png)
+
+飞书推送示例：
 
 ![飞书推送示例](/docs/feishu.jpg)
 
 ---
 
-# 📈 项目价值
+# 🎯 Product Positioning
 
-本项目可应用于：
+本项目不仅是一个政策爬虫工具。
 
-* 医药企业政策监测
-* 医疗器械行业研究
-* 行业咨询机构
-* 投资研究
-* 医疗AI企业情报系统
+其目标是逐步构建面向医药企业的监管情报平台（Medical Regulatory Intelligence Platform）。
 
-可扩展至：
+当前监测来源：
 
-* FDA公告
-* 医保局政策
-* 药明康德资讯
-* 医疗AI新闻
-* 行业融资动态
+* NMPA法规文件
+* NMPA药监动态
+
+未来扩展方向：
+
+* CDE审评动态
+* CMDE器械审评
+* 飞行检查公告
+* 不良反应监测
+* 医疗AI资讯
+* 医保政策动态
 
 ---
 
-# 📈 商业价值
+# 💰 Commercial Value
 
-- 自动监测NMPA最新政策公告
-- 减少人工检索政策时间
-- 自动生成政策摘要
-- 建立企业内部政策情报系统
-- 支持行业研究和投资分析
-- 支持医药企业快速获取监管动态
-  
+通过自动化监管信息采集与AI分析能力，实现：
+
+* 第一时间发现政策变化
+* 自动提取监管重点
+* 降低人工监测成本
+* 提高法规响应速度
+* 支持研发与注册决策
+* 支持行业竞争情报分析
+
+典型应用：
+
+* 医药企业法规事务
+* 医疗器械注册事务
+* QA/QC质量体系管理
+* 医疗AI企业政策研究
+* 医药咨询机构
+* 投资研究机构
+
 ---
 
-# 🔮 后续规划
+# 🔮 Roadmap
 
-* [ ] 接入 FDA 数据源
-* [ ] 接入国家医保局政策
-* [ ] 接入医疗AI行业资讯
-* [ ] 增加 Power BI 数据看板
-* [ ] 增加热点趋势分析
-* [ ] 接入 n8n 自动化工作流
+## Version 2.0 ✅
+
+* NMPA法规文件监测
+* NMPA药监动态监测
+* AI摘要
+* 飞书推送
+
+## Version 3.0 🚧
+
+* CDE审评动态
+* CMDE审评动态
+* 飞行检查公告
+
+## Version 4.0 🚧
+
+* 医疗AI情报系统
+* 医保政策监测
+* 行业资讯聚合
+
+## Version 5.0 🚧
+
+* Power BI Dashboard
+* 企业级情报看板
+* 趋势预测分析
 
 ---
 
@@ -374,4 +326,4 @@ python backfill_nmpa_recent.py
 
 MIT License
 
-Copyright (c) 2026
+Copyright (c) 2026 Layla
