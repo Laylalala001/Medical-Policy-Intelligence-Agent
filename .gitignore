@@ -14,16 +14,22 @@ build/
 venv/
 env/
 ENV/
-.venv
+.venv/
 
 # IDE 配置
 .vscode/
 .idea/
 
-# 日志和数据库文件
+# 日志文件
 *.log
+crawler.log
+
+# 数据库文件
 *.db
 *.sqlite3
+
+# 环境变量（数据库密码、飞书Webhook等）
+.env
 
 # 临时文件
 *.tmp
@@ -32,5 +38,8 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Ollama 相关（如果有本地数据）
+# Ollama 本地数据
 ollama/
+
+# 未来可能生成的报告目录
+reports/
