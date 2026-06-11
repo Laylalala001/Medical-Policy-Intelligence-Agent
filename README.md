@@ -247,6 +247,9 @@ Python · PostgreSQL · Docker · Ollama · Qwen2-7B · DrissionPage · Beautifu
 
 ![飞书推送示例](/docs/feishu.jpg)
 
+结构图示例
+![结构图示例](/docs/architecture.png)
+
 ---
 
 # 🎯 Product Positioning
