@@ -324,7 +324,7 @@ python backfill_nmpa_recent.py
 
 ![数据库公告示例](/docs/image.png)
 
-![飞书推送示例](/docs/feishu.png)
+![飞书推送示例](/docs/feishu.jpg)
 
 ---
 
