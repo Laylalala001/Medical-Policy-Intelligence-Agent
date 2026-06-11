@@ -4,26 +4,147 @@ import time
 import random
 import psycopg2
 import requests
-from datetime import datetime
+import sys
+import os
+import logging
+
+from dotenv import load_dotenv
+from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from DrissionPage import ChromiumPage, ChromiumOptions
 
-# ========== 配置 ==========
-DB_NAME = ""
-DB_USER = ""
-DB_PASSWORD = "" #your_password_here
-DB_HOST = "localhost"
-DB_PORT = 5432
+load_dotenv()
 
-LIST_URL = "https://www.nmpa.gov.cn/xxgk/fgwj/index.html"
-FEISHU_WEBHOOK = "" #your_webhook_key
+logging.basicConfig(
+    filename="crawler.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    encoding="utf-8"
+)
+
+# ========== 全局函数定义 ==========
+def normalize_url(href):
+    if href.startswith("http"):
+        return href
+    if href.startswith("../../"):
+        href = href.lstrip("../../")
+        return "https://www.nmpa.gov.cn/" + href
+    elif href.startswith("../"):
+        href = href.lstrip("../")
+        return "https://www.nmpa.gov.cn/" + href
+    elif href.startswith("/"):
+        return "https://www.nmpa.gov.cn" + href
+    else:
+        return "https://www.nmpa.gov.cn/" + href.lstrip("./")
+
+def extract_date(text):
+    match = re.search(r"(\d{4}[./-]\d{1,2}[./-]\d{1,2})", text)
+    if match:
+        date_str = match.group(1)
+        for fmt in ("%Y-%m-%d", "%Y.%m.%d", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(date_str, fmt).date()
+            except:
+                continue
+    return None
+
+def extract_doc_num(title, date_text):
+    match = re.search(r"(\d{4}年[第\s]*\d+号)", title + " " + date_text)
+    return match.group(1) if match else None
+
+def parse_fgwj_list(page):
+    """法规文件专用解析"""
+    soup = BeautifulSoup(page.html, "lxml")
+    items = []
+    for li in soup.find_all("li"):
+        a = li.find("a")
+        if not a:
+            continue
+        title = a.get_text(strip=True)
+        href = a.get("href")
+        if not href or not title:
+            continue
+        date_span = li.find("span")
+        date_text = date_span.get_text(strip=True) if date_span else li.get_text()
+        pub_date = extract_date(date_text)
+        if pub_date is None:
+            continue
+        url = normalize_url(href)
+        doc_num = extract_doc_num(title, date_text)
+        items.append({
+            "title": title,
+            "url": url,
+            "pub_date": pub_date,
+            "doc_num": doc_num
+        })
+    return items
+
+def parse_ypjgyw_list(page):
+    """药监动态专用解析"""
+    soup = BeautifulSoup(page.html, "lxml")
+    items = []
+    for li in soup.find_all("li"):
+        a_tag = li.find("a")
+        span_tag = li.find("span")
+        if a_tag and span_tag:
+            title = a_tag.get_text(strip=True)
+            href = a_tag.get("href")
+            if not href or not title:
+                continue
+            url = normalize_url(href)
+            date_text = span_tag.get_text(strip=True)
+            pub_date = extract_date(date_text)
+            if pub_date:
+                items.append({
+                    "title": title,
+                    "url": url,
+                    "pub_date": pub_date,
+                    "doc_num": None
+                })
+    return items
+
+# ========== 配置 ==========
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", 5432))
+
+FEISHU_WEBHOOK = os.getenv("FEISHU_WEBHOOK")
+
+# 检查环境变量
+required_env = [
+    "DB_NAME",
+    "DB_USER",
+    "DB_PASSWORD",
+    "FEISHU_WEBHOOK"
+]
+
+for key in required_env:
+    if not os.getenv(key):
+        raise ValueError(f"环境变量缺失: {key}")
+
+CHANNELS = [
+    {
+        "name": "法规文件",
+        "list_url": "https://www.nmpa.gov.cn/xxgk/fgwj/index.html",
+        "parse_func": parse_fgwj_list,
+        "enabled": True
+    },
+    {
+        "name": "药监动态",
+        "list_url": "https://www.nmpa.gov.cn/yaowen/ypjgyw/index.html",
+        "parse_func": parse_ypjgyw_list,
+        "enabled": True
+    }
+]
 
 MIN_DELAY = 2
 MAX_DELAY = 5
 MAX_RETRIES = 3
-# ==========================
 
-# ========== 加权关键词库（不变）==========
+# ========== 关键词库 ==========
 KEYWORDS_WEIGHTED = {
     "医疗器械": {
         "医疗器械": 10, "体外诊断": 8, "医用耗材": 8, "植入": 7, "导管": 6, "支架": 8, "起搏器": 9,
@@ -62,7 +183,7 @@ def ai_classify(text):
             "prompt": prompt,
             "stream": False,
             "options": {"temperature": 0}
-        }, timeout=15)
+        }, timeout=120)
         if resp.status_code == 200:
             result = resp.json()["response"].strip()
             if result in ["药品", "医疗器械", "化妆品", "其他"]:
@@ -113,25 +234,30 @@ def ensure_columns():
                            WHERE table_name='nmpa_announcements' AND column_name='summary') THEN
                 ALTER TABLE nmpa_announcements ADD COLUMN summary TEXT;
             END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                           WHERE table_name='nmpa_announcements' AND column_name='channel') THEN
+                ALTER TABLE nmpa_announcements ADD COLUMN channel VARCHAR(50);
+            END IF;
         END $$;
     """)
     conn.commit()
     cur.close()
     conn.close()
 
-def insert_announcement(title, url, pub_date, doc_num, category):
+def insert_announcement(title, url, pub_date, doc_num, category, channel):
     conn = get_db_conn()
     cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO nmpa_announcements (title, url, publish_date, document_number, category)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO nmpa_announcements (title, url, publish_date, document_number, category, channel)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (url) DO NOTHING
-        """, (title, url, pub_date, doc_num, category))
+        """, (title, url, pub_date, doc_num, category, channel))
         conn.commit()
         return cur.rowcount > 0
     except Exception as e:
         print(f"数据库错误: {e}")
+        logging.error(f"Database Error: {e}")
         return False
     finally:
         cur.close()
@@ -146,16 +272,27 @@ def update_content_summary(url, content, summary):
     cur.close()
     conn.close()
 
-def fetch_page_content(url):
+def is_content_missing(url):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT content, summary FROM nmpa_announcements WHERE url=%s", (url,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return True
+    content, summary = row
+    if not content or content == "" or not summary or summary.startswith("（正文") or summary.startswith("（摘要生成失败"):
+        return True
+    return False
+
+def fetch_page_content(page, url):
     for attempt in range(MAX_RETRIES):
         try:
-            co = ChromiumOptions()
-            co.set_argument('--disable-blink-features=AutomationControlled')
-            page = ChromiumPage(addr_or_opts=co)
-            page.get(url)
+            tab = page.new_tab(url)
             time.sleep(random.uniform(2, 4))
-            html = page.html
-            page.close()
+            html = tab.html
+            tab.close()
             if html and len(html) > 500:
                 return html
         except Exception as e:
@@ -164,18 +301,11 @@ def fetch_page_content(url):
     return None
 
 def extract_main_text(html):
-    """
-    从 NMPA 页面 HTML 中提取正文内容。
-    优先使用 .text 容器，备用其他常见选择器。
-    """
     soup = BeautifulSoup(html, "lxml")
     selectors = [
-        ".text",                 # NMPA 当前页面实际使用的正文容器
-        ".content",              # 常见正文容器
-        "#Content",              # 旧版常见正文容器
-        ".article-content",      # 其他可能容器
-        ".TRS_Editor",           # 政府网站常用容器
-        ".con"                   # 通用容器
+        ".text", ".content", "#Content", ".article-content",
+        ".TRS_Editor", ".con", "div.news-content", "div.detail-content",
+        "article", "main"
     ]
     for selector in selectors:
         content_div = soup.select_one(selector)
@@ -184,13 +314,22 @@ def extract_main_text(html):
                 tag.decompose()
             text = content_div.get_text(separator="\n")
             text = re.sub(r"\n\s*\n", "\n", text)
+            if len(text.strip()) > 100:
+                return text.strip()
+    body = soup.find("body")
+    if body:
+        for tag in body(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+        text = body.get_text(separator="\n")
+        text = re.sub(r"\n\s*\n", "\n", text)
+        if len(text.strip()) > 200:
             return text.strip()
     return None
 
 def generate_summary(title, content):
     if not content:
         return "（正文无法获取）"
-    truncated = content[:1500]
+    truncated = content[:2000]
     prompt = f"""你是医药政策分析专家。根据标题和正文，用一句话（40字以内）概括该政策的核心要点或对企业的影响。
 标题：{title}
 正文片段：
@@ -202,45 +341,59 @@ def generate_summary(title, content):
             "prompt": prompt,
             "stream": False,
             "options": {"temperature": 0.3, "num_predict": 80}
-        }, timeout=30)
+        }, timeout=120)
         if resp.status_code == 200:
             summary = resp.json()["response"].strip()
             if len(summary) > 100 or not summary:
                 return title[:40] + "..."
             return summary
         else:
-            return "（摘要生成失败）"
+            return f"（摘要生成失败，HTTP状态码: {resp.status_code}）"
     except Exception as e:
         print(f"⚠️ AI 摘要失败: {e}")
-        return "（摘要生成失败）"
+        return f"（摘要生成失败: {str(e)[:50]}）"
 
-def process_new_announcement(item):
+def process_announcement(page, item, is_new, channel_name):
     url = item['url']
+    if is_new:
+        print(f"  ✅ 新增: {item['title'][:40]}... [{item.get('category', '其他')}] from {channel_name}")
+    else:
+        print(f"  🔄 重新抓取（之前缺失）: {item['title'][:40]}... from {channel_name}")
+    
     print(f"  📄 抓取正文: {url[:80]}...")
-    html = fetch_page_content(url)
+    html = fetch_page_content(page, url)
     if not html:
         print(f"  ❌ 正文抓取失败")
-        # 避免重复尝试：写入失败标记
         update_content_summary(url, "", "（正文抓取失败）")
-        return
+        return "（正文抓取失败）"
+    
     content = extract_main_text(html)
     if not content:
         print(f"  ⚠️ 未提取到正文内容")
         update_content_summary(url, "", "（正文提取失败）")
-        return
+        return "（正文提取失败）"
+    
     summary = generate_summary(item['title'], content)
     print(f"  📝 摘要: {summary[:60]}...")
     update_content_summary(url, content, summary)
+    return summary
 
 def send_feishu(title_text, items):
+    """
+    发送飞书消息
+    items: list of (title, url, summary, channel, pub_date)
+    """
     if not items:
         return
     content_lines = []
-    for idx, (item_title, item_url) in enumerate(items, 1):
+    for idx, (item_title, item_url, item_summary, channel, pub_date) in enumerate(items, 1):
+        date_str = pub_date.strftime("%Y-%m-%d") if pub_date else "日期未知"
         line = [
             {"tag": "text", "text": f"{idx}. "},
+            {"tag": "text", "text": f"【{channel}】"},
             {"tag": "a", "text": item_title, "href": item_url},
-            {"tag": "text", "text": "\n"}
+            {"tag": "text", "text": f" ({date_str})\n"},
+            {"tag": "text", "text": f"   📝 {item_summary}\n\n"}
         ]
         content_lines.append(line)
     payload = {
@@ -262,62 +415,45 @@ def send_feishu(title_text, items):
             print(f"❌ 飞书推送失败: {resp.text}")
     except Exception as e:
         print(f"❌ 飞书推送异常: {e}")
-
-def extract_list_items(page):
-    soup = BeautifulSoup(page.html, "lxml")
-    items = []
-    for li in soup.select("ul.list li, .news-list li, .list li"):
-        a = li.find("a")
-        if not a:
-            continue
-        title = a.get_text(strip=True)
-        href = a.get("href")
-        if not href or not title:
-            continue
-        if href.startswith("/"):
-            url = "https://www.nmpa.gov.cn" + href
-        elif href.startswith("../"):
-            clean_href = href.lstrip("../")
-            url = "https://www.nmpa.gov.cn/" + clean_href
-        else:
-            url = href
-        date_text = li.get_text()
-        date_match = re.search(r"(\d{4}[./-]\d{1,2}[./-]\d{1,2})", date_text)
-        pub_date = None
-        if date_match:
-            try:
-                pub_date = datetime.strptime(date_match.group(1), "%Y-%m-%d").date()
-            except:
-                try:
-                    pub_date = datetime.strptime(date_match.group(1), "%Y.%m.%d").date()
-                except:
-                    pass
-        doc_match = re.search(r"(\d{4}年[第\s]*\d+号)", title + " " + date_text)
-        doc_num = doc_match.group(1) if doc_match else None
-        items.append({
-            "title": title,
-            "url": url,
-            "pub_date": pub_date,
-            "doc_num": doc_num
-        })
-    return items
+        logging.error(f"Feishu Error: {e}")
 
 def get_page_with_retry(page, url):
     for attempt in range(MAX_RETRIES):
         try:
             page.get(url)
-            page.wait.ele_displayed("ul.list", timeout=10)
+            for _ in range(20):
+                if len(page.html) > 500:
+                    break
+                time.sleep(0.5)
+            time.sleep(random.uniform(2, 4))
             return True
         except Exception as e:
             print(f"⚠️ 第 {attempt+1} 次访问失败: {e}")
-            if attempt < MAX_RETRIES - 1:
-                time.sleep(random.uniform(2, 5))
-            else:
-                return False
+        if attempt < MAX_RETRIES - 1:
+            time.sleep(random.uniform(2, 5))
     return False
 
+def filter_recent_items(items, days=7):
+    today = datetime.now().date()
+    cutoff = today - timedelta(days=days)
+    filtered = []
+    for item in items:
+        pub_date = item.get('pub_date')
+        if pub_date is None:
+            continue
+        if pub_date >= cutoff:
+            filtered.append(item)
+        else:
+            print(f"⏭️ 跳过超过{days}天的公告：{item['title'][:40]}... ({pub_date})")
+    return filtered
+
 def main():
-    print("🚀 启动 NMPA 公告采集（只处理新增，正文+AI摘要）")
+    force_refetch = "--force" in sys.argv
+    if force_refetch:
+        print("⚠️ 强制模式：将重新抓取所有正文缺失的公告（仅限7天内）")
+    
+    print("🚀 启动 NMPA 公告采集（多频道，正文+AI摘要）")
+    logging.info("Crawler Started")
     ensure_columns()
 
     co = ChromiumOptions()
@@ -325,39 +461,80 @@ def main():
     co.set_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     page = ChromiumPage(addr_or_opts=co)
 
-    time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-    if not get_page_with_retry(page, LIST_URL):
-        page.close()
-        return
+    try:
+        all_processed = []
+        total_new = 0
+        total_refetch = 0
 
-    items = extract_list_items(page)
-    print(f"📄 从列表页提取到 {len(items)} 条公告")
+        for channel in CHANNELS:
+            if not channel.get("enabled", True):
+                continue
+            print(f"\n📡 正在采集频道：{channel['name']}")
+            if not get_page_with_retry(page, channel['list_url']):
+                print(f"  ❌ 无法获取列表页，跳过")
+                continue
 
-    new_count = 0
-    new_announcements = []
-    for item in items:
-        text_for_classify = f"{item['title']} {item['doc_num'] or ''}"
-        category = classify_by_text(text_for_classify)
-        inserted = insert_announcement(
-            item['title'], item['url'], item['pub_date'],
-            item['doc_num'], category
-        )
-        if inserted:
-            new_count += 1
-            new_announcements.append((item['title'][:60], item['url']))
-            print(f"  ✅ 新增: {item['title'][:40]}... [{category}]")
-            process_new_announcement(item)
-            time.sleep(random.uniform(3, 6))
+            items = channel['parse_func'](page)
+            print(f"  📄 从列表页提取到 {len(items)} 条公告")
+            recent_items = filter_recent_items(items, days=7)
+            print(f"  📅 7天内公告：{len(recent_items)} 条")
 
-    if new_count > 0:
-        today = datetime.now().strftime("%Y-%m-%d")
-        title_text = f"📢 NMPA 今日新增 {new_count} 条公告（{today}）"
-        send_feishu(title_text, new_announcements)
-    else:
-        print("ℹ️ 没有新增公告")
+            new_count = 0
+            refetch_count = 0
+            channel_processed = []
 
-    page.close()
+            for item in recent_items:
+                text_for_classify = f"{item['title']} {item['doc_num'] or ''}"
+                category = classify_by_text(text_for_classify)
+                item['category'] = category
+
+                inserted = insert_announcement(
+                    item['title'], item['url'], item['pub_date'],
+                    item['doc_num'], category, channel['name']
+                )
+
+                if inserted:
+                    new_count += 1
+                    summary = process_announcement(page, item, is_new=True, channel_name=channel['name'])
+                    # 存储 (title, url, summary, channel, pub_date)
+                    channel_processed.append((item['title'][:60], item['url'], summary, channel['name'], item['pub_date']))
+                    time.sleep(random.uniform(3, 6))
+                else:
+                    pub_date = item.get('pub_date')
+                    if pub_date and (datetime.now().date() - pub_date).days > 7:
+                        continue
+                    if force_refetch or is_content_missing(item['url']):
+                        refetch_count += 1
+                        summary = process_announcement(page, item, is_new=False, channel_name=channel['name'])
+                        channel_processed.append((item['title'][:60], item['url'], summary, channel['name'], item['pub_date']))
+                        time.sleep(random.uniform(3, 6))
+
+            if new_count > 0 or refetch_count > 0:
+                print(f"  ✅ {channel['name']} 频道：新增 {new_count} 条，重抓 {refetch_count} 条")
+                all_processed.extend(channel_processed)
+                total_new += new_count
+                total_refetch += refetch_count
+            else:
+                print(f"  ℹ️ {channel['name']} 频道无更新")
+
+            time.sleep(random.uniform(5, 10))
+
+        if all_processed:
+            today = datetime.now().strftime("%Y-%m-%d")
+            title_text = f"📢 NMPA 公告更新（{today}）"
+            if total_new > 0:
+                title_text += f" 新增{total_new}条"
+            if total_refetch > 0:
+                title_text += f" 重抓{total_refetch}条"
+            send_feishu(title_text, all_processed)
+        else:
+            print("\nℹ️ 所有频道均无新增或7天内无缺失内容")
+    finally:
+        page.quit()
+        print("✅ 浏览器已关闭")
+
     print("✅ 采集完成")
+    logging.info("Crawler Finished")
 
 if __name__ == "__main__":
     main()
